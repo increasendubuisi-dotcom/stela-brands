@@ -36,9 +36,16 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
 done
 "${PSQL[@]}" -f "$ROOT/supabase/tests/_helpers.sql"
 
+# Template ops generated from the TypeScript source, passed to tests as psql variables.
+TSX="$ROOT/node_modules/.bin/tsx"
+OPS_VARS=()
+for t in complete essentials blank; do
+  OPS_VARS+=(-v "ops_$t=$("$TSX" "$ROOT/scripts/template-ops.ts" "$t")")
+done
+
 for f in "$ROOT"/supabase/tests/[0-9]*.sql; do
   echo "test: $(basename "$f")"
-  "${PSQL[@]}" -o /dev/null -f "$f" 2>&1 | sed -e 's/^psql:[^ ]* NOTICE:  /  /' -e 's/^NOTICE:  /  /'
+  "${PSQL[@]}" "${OPS_VARS[@]}" -o /dev/null -f "$f" 2>&1 | sed -e 's/^psql:[^ ]* NOTICE:  /  /' -e 's/^NOTICE:  /  /'
   status=${PIPESTATUS[0]}
   if [ "$status" -ne 0 ]; then exit "$status"; fi
 done
