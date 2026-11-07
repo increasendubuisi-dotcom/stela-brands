@@ -7,10 +7,10 @@ Status key: Not started · In progress · Completed · Tested · Blocked
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
 | 1 | Repo, CI, schema + RLS | Tested | 60 database tests, 37 unit tests. Applied to Supabase project stela-brands (London); live smoke test passed. |
-| 2 | Authentication and profiles | In progress | Signup trigger creates profile, studio and Starter plan (tested). Sign-in screens not built. |
-| 3 | Dashboard | Not started | |
-| 4 | New brand flow | Not started | |
-| 5 | Templates as data | Completed | Complete, Essentials, Blank; every template block validated in tests. Applying a template not built. |
+| 2 | Authentication and profiles | Completed | Sign-up with email confirmation, sign-in, sign-out, protected routes; signup creates profile, studio and Starter plan. Live at stela-brands.vercel.app. |
+| 3 | Dashboard | Completed | Brands by status (all, drafts, published, archived); archive, restore, delete with confirmation. Duplicate not built yet. |
+| 4 | New brand flow | In progress | Name, description, website, template; plan limit enforced. Logo/asset upload and colour extraction not built yet. |
+| 5 | Templates as data | Tested | Complete, Essentials, Blank applied through apply_draft_ops in database tests and from the app. |
 | 6 | Block registry | In progress | 14 block types with validated props (tested). Render/Edit components not built. |
 | 7 | Section editor | Not started | Database side done: nesting rules, cascade delete (tested). |
 | 8 | Drag and drop | Not started | Ordering maths done: positionBetween / rebalance (tested). |
