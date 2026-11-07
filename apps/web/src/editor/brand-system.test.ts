@@ -22,7 +22,7 @@ const ids = () => {
   let n = 0;
   return () => `00000000-0000-4000-8000-${(++n).toString().padStart(12, "0")}`;
 };
-const empty = (): Draft => ({ sections: {}, blocks: {}, strategy: {}, colors: {}, families: {}, styles: {} });
+const empty = (): Draft => ({ sections: {}, blocks: {}, strategy: {}, colors: {}, families: {}, styles: {}, assets: {}, fontFiles: {} });
 
 describe("colours", () => {
   it("normalises hex and keeps names unique", () => {
@@ -96,6 +96,7 @@ describe("typography", () => {
     expect(b.draft.families[b.created!]).toMatchObject({ role: "secondary", fallback: "system-ui, sans-serif" });
     expect(addFamily(b.draft, { name: "fraunces" }).error).toMatch(/already/);
     expect(familyCss(b.draft.families[b.created!])).toBe('"DM Sans", system-ui, sans-serif');
+    expect(familyCss({ name: 'Evil"}</style><script>', fallback: "serif; } body {" })).toBe('"Evilstylescript", serif  body');
   });
 
   it("builds a standard scale and loads the weights it uses", () => {

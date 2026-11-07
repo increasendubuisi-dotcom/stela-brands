@@ -142,9 +142,18 @@ export function deleteColor(draft: Draft, id: string): Result {
 // Typefaces
 // ---------------------------------------------------------------------------
 
+/** A typeface name made safe to place inside CSS (quotes, braces and angle brackets removed). */
+export function cssFamilyName(name: string): string {
+  return name.replace(/[^\p{L}\p{N} _-]/gu, "").trim() || "Brand font";
+}
+
+function cssFallback(fallback: string): string {
+  return fallback.replace(/[^\p{L}\p{N} ,_-]/gu, "").trim() || "sans-serif";
+}
+
 export function familyCss(family: Pick<FamilyRow, "name" | "fallback"> | undefined): string {
   if (!family) return "inherit";
-  return `"${family.name.replace(/"/g, "")}", ${family.fallback || "sans-serif"}`;
+  return `"${cssFamilyName(family.name)}", ${cssFallback(family.fallback)}`;
 }
 
 export function addFamily(
@@ -174,7 +183,7 @@ export function addFamily(
   };
 }
 
-export function updateFamily(draft: Draft, id: string, patch: Partial<Pick<FamilyRow, "role" | "fallback" | "licence_note">>): Result {
+export function updateFamily(draft: Draft, id: string, patch: Partial<Pick<FamilyRow, "role" | "fallback" | "licence_note" | "downloadable">>): Result {
   const current = draft.families[id];
   if (!current) return { draft, ops: [] };
   const next = { ...current, ...patch };

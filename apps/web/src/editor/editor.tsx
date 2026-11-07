@@ -24,6 +24,11 @@ import {
 } from "./brand-system";
 import { Canvas, contrastGrade, STRATEGY_LABELS, type CanvasActions } from "./canvas";
 import { FontLoader } from "./font-loader";
+import { AssetPicker, AssetsPanel, type AssetActions, type UploadState } from "./assets-panel";
+import { addAsset, addFontFile, assetUsage, deleteAsset, deleteFontFile, guessFontWeight, updateAsset } from "./assets";
+import { AssetUrls } from "./canvas";
+import { PublishPanel, type PublishedInfo } from "./publish-panel";
+import { uploadAsset } from "./upload";
 import { contrastRatio } from "@stela/brand-schema";
 import {
   addBlock,
@@ -47,15 +52,24 @@ import {
 import { SectionTree, type TreeActions } from "./section-tree";
 import { useDraft, type SaveStatus } from "./use-draft";
 
-export type EditorBrand = { id: string; name: string; status: string };
+export type EditorBrand = { id: string; name: string; slug: string; status: string };
 
-export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: Draft; rev: number }) {
+export function Editor({ brand, initial, rev, assetUrls, uploadLimitMb, published }: {
+  brand: EditorBrand;
+  initial: Draft;
+  rev: number;
+  assetUrls: Record<string, string>;
+  uploadLimitMb: number;
+  published: PublishedInfo | null;
+}) {
   const { draft, status, run } = useDraft(brand.id, initial, rev);
+  const [urls, setUrls] = useState(assetUrls);
+  const [upload, setUpload] = useState<UploadState>({ active: 0, errors: [] });
   const firstTop = childSections(initial, null)[0]?.id ?? null;
   const [sectionId, setSectionId] = useState<string | null>(firstTop);
   const [blockId, setBlockId] = useState<string | null>(null);
   const [focusSection, setFocusSection] = useState<string | null>(null);
-  const [tab, setTab] = useState<"guide" | "brand">("guide");
+  const [tab, setTab] = useState<"guide" | "brand" | "assets">("guide");
   const [notice, setNotice] = useState<string | null>(null);
 
   const selectedSection = sectionId ? draft.sections[sectionId] : undefined;
@@ -121,7 +135,53 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
     },
   };
 
+  const uploadFiles = async (files: File[]): Promise<string[]> => {
+    setUpload((u) => ({ active: u.active + files.length, errors: [] }));
+    const created: string[] = [];
+    for (const file of files) {
+      try {
+        const { row, url } = await uploadAsset(brand.id, file, uploadLimitMb);
+        run((d) => addAsset(d, row));
+        created.push(row.id);
+        if (url) setUrls((m) => ({ ...m, [row.id]: url }));
+      } catch (e) {
+        setUpload((u) => ({ ...u, errors: [...u.errors, e instanceof Error ? e.message : `Couldn't upload ${file.name}`] }));
+      } finally {
+        setUpload((u) => ({ ...u, active: u.active - 1 }));
+      }
+    }
+    return created;
+  };
+
+  const assetActions: AssetActions = {
+    upload: async (files) => {
+      await uploadFiles(files);
+    },
+    update: (id, patch) => run((d) => updateAsset(d, id, patch)),
+    remove: (id) => {
+      const a = draft.assets[id];
+      if (!a) return;
+      const used = assetUsage(draft, id);
+      const msg = used
+        ? `Remove ${a.name}? It is used in ${used} place${used === 1 ? "" : "s"} and will be taken out of them.`
+        : `Remove ${a.name} from the library?`;
+      if (window.confirm(msg)) run((d) => deleteAsset(d, id));
+    },
+  };
+
   const brandActions: BrandActions = {
+    uploadFontFiles: async (familyId, files) => {
+      const fonts = files.filter((f) => /\.(woff2?|ttf|otf)$/i.test(f.name));
+      if (fonts.length !== files.length) setNotice("Only .woff2, .woff, .ttf and .otf files can be added to a typeface.");
+      const ids = await uploadFiles(fonts);
+      ids.forEach((assetId, i) => {
+        const guess = guessFontWeight(fonts[i]!.name);
+        const r = run((d) => addFontFile(d, { family_id: familyId, asset_id: assetId, ...guess }));
+        if (r.error) setNotice(r.error);
+      });
+    },
+    deleteFontFile: (id) => run((d) => deleteFontFile(d, id)),
+    setFontLicence: (familyId, downloadable, note) => run((d) => updateFamily(d, familyId, { downloadable, licence_note: note })),
     addColor: (input) => run((d) => addColor(d, input)).error,
     updateColor: (id, patch) => run((d) => updateColor(d, id, patch)).error,
     moveColor: (id, dir) => run((d) => moveColor(d, id, dir)),
@@ -163,7 +223,7 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
 
   return (
     <div className="flex min-h-[calc(100vh-61px)] flex-col">
-      <FontLoader draft={draft} />
+      <FontLoader draft={draft} urls={urls} />
       <div className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-5 py-2.5">
         <Link href="/dashboard" className="text-sm text-muted no-underline hover:text-ink">
           ← Brands
@@ -173,7 +233,7 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
         <span className="rounded-full bg-[#f0eee8] px-2 py-0.5 text-xs capitalize text-muted">{brand.status}</span>
         <SaveIndicator status={status} />
         <div className="flex-1" />
-        <span className="text-xs text-subtle">Preview and publishing arrive in the next stages.</span>
+        <PublishPanel brand={brand} status={status} published={published} />
       </div>
 
       {status.state === "conflict" || status.state === "error" ? <SaveProblem status={status} /> : null}
@@ -185,6 +245,7 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
               [
                 ["guide", "Guide"],
                 ["brand", "Brand system"],
+                ["assets", "Assets"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -207,12 +268,20 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
               </button>
             </div>
           ) : null}
-          {tab === "guide" ? <SectionTree draft={draft} selectedId={sectionId} actions={tree} /> : <BrandPanel draft={draft} actions={brandActions} />}
+          {tab === "guide" ? (
+            <SectionTree draft={draft} selectedId={sectionId} actions={tree} />
+          ) : tab === "brand" ? (
+            <BrandPanel draft={draft} actions={brandActions} urls={urls} />
+          ) : (
+            <AssetsPanel draft={draft} urls={urls} upload={upload} actions={assetActions} limitMb={Math.min(uploadLimitMb, 50)} />
+          )}
         </aside>
 
         <main className="min-w-0 flex-[999_1_480px] bg-paper p-4 md:p-8">
           {rootId ? (
-            <Canvas draft={draft} rootId={rootId} selectedBlockId={blockId} focusSectionId={focusSection} actions={canvas} />
+            <AssetUrls.Provider value={urls}>
+              <Canvas draft={draft} rootId={rootId} selectedBlockId={blockId} focusSectionId={focusSection} actions={canvas} />
+            </AssetUrls.Provider>
           ) : (
             <EmptyGuide onAdd={tree.addTop} />
           )}
@@ -220,7 +289,7 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
 
         <aside className="w-full border-l border-line bg-surface p-5 lg:w-[300px]" aria-label="Settings">
           {selectedBlock ? (
-            <BlockSettings draft={draft} block={selectedBlock} openBrand={() => setTab("brand")} onLayout={(layout) => run((d) => updateBlockLayout(d, selectedBlock.id, layout))} onProps={(props) => run((d) => updateBlockProps(d, selectedBlock.id, props))} />
+            <BlockSettings draft={draft} urls={urls} block={selectedBlock} openBrand={() => setTab("brand")} openAssets={() => setTab("assets")} onLayout={(layout) => run((d) => updateBlockLayout(d, selectedBlock.id, layout))} onProps={(props) => run((d) => updateBlockProps(d, selectedBlock.id, props))} />
           ) : selectedSection ? (
             <SectionSettings section={selectedSection} tree={tree} />
           ) : (
@@ -310,10 +379,17 @@ const BLOCK_NAMES: Partial<Record<BlockType, string>> = {
   color_combinations: "Colour combinations",
   type_specimen: "Type specimen",
   type_family: "Typeface",
+  image: "Image",
+  video: "Video",
+  gallery: "Gallery",
+  file_download: "File download",
+  dos_donts: "Do's and don'ts",
 };
 
-function BlockSettings({ draft, block, openBrand, onLayout, onProps }: {
+function BlockSettings({ draft, urls, block, openBrand, openAssets, onLayout, onProps }: {
   draft: Draft;
+  urls: Record<string, string>;
+  openAssets: () => void;
   block: BlockRow;
   openBrand: () => void;
   onLayout: (layout: Partial<BlockRow["layout"]>) => void;
@@ -352,6 +428,9 @@ function BlockSettings({ draft, block, openBrand, onLayout, onProps }: {
       {block.type === "color_combinations" ? <CombinationSettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
       {block.type === "type_specimen" ? <SpecimenSettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
       {block.type === "type_family" ? <FamilySettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
+      {["image", "video", "gallery", "file_download", "dos_donts"].includes(block.type) ? (
+        <AssetBlockSettings draft={draft} urls={urls} block={block} onProps={onProps} openAssets={openAssets} />
+      ) : null}
       {block.type === "strategy_field" ? (
         <>
           <Segmented
@@ -645,5 +724,132 @@ function FamilySettings({ draft, block, onProps, openBrand }: SettingsProps) {
         Show character set
       </label>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Asset block settings
+// ---------------------------------------------------------------------------
+
+function AssetBlockSettings({ draft, urls, block, onProps, openAssets }: {
+  draft: Draft;
+  urls: Record<string, string>;
+  block: BlockRow;
+  onProps: (props: Record<string, unknown>) => void;
+  openAssets: () => void;
+}) {
+  const p = block.props;
+  const text = (key: string, label: string, max: number) => (
+    <label className="flex flex-col gap-1.5 font-medium">
+      {label}
+      <input
+        key={`${block.id}-${key}`}
+        defaultValue={String(p[key] ?? "")}
+        maxLength={max}
+        onBlur={(e) => onProps({ ...p, [key]: e.currentTarget.value || (key === "caption" ? null : "") })}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className="h-10 rounded-[var(--radius-control)] border border-line-strong px-3 font-normal outline-none focus:border-accent"
+      />
+    </label>
+  );
+
+  if (block.type === "image") {
+    return (
+      <>
+        <div className="flex flex-col gap-1.5">
+          <span className="font-medium">Image</span>
+          <AssetPicker draft={draft} urls={urls} kind="image" multiple={false} selected={p.assetId ? [String(p.assetId)] : []} onChange={(ids) => onProps({ ...p, assetId: ids[0] ?? null })} onUpload={openAssets} />
+        </div>
+        {text("alt", "Alt text (describes the image for screen readers)", 300)}
+        {text("caption", "Caption", 300)}
+        <Segmented label="Fit" value={String(p.fit ?? "contain")} options={[["contain", "Whole image"], ["cover", "Fill frame"]]} onChange={(v) => onProps({ ...p, fit: v })} />
+        <label className="flex flex-col gap-1.5 font-medium">
+          Background
+          <select value={String(p.background ?? "")} onChange={(e) => onProps({ ...p, background: e.target.value || null })} className="h-10 rounded-[var(--radius-control)] border border-line-strong bg-surface px-2 font-normal">
+            <option value="">Neutral</option>
+            {allColors(draft).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </>
+    );
+  }
+  if (block.type === "video") {
+    return (
+      <>
+        <div className="flex flex-col gap-1.5">
+          <span className="font-medium">Video</span>
+          <AssetPicker draft={draft} urls={urls} kind="video" multiple={false} selected={p.assetId ? [String(p.assetId)] : []} onChange={(ids) => onProps({ ...p, assetId: ids[0] ?? null })} onUpload={openAssets} />
+        </div>
+        {text("caption", "Caption", 300)}
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={Boolean(p.autoplay)} onChange={(e) => onProps({ ...p, autoplay: e.target.checked })} />
+          Play automatically (muted)
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={Boolean(p.loop)} onChange={(e) => onProps({ ...p, loop: e.target.checked })} />
+          Loop
+        </label>
+      </>
+    );
+  }
+  if (block.type === "gallery") {
+    return (
+      <>
+        <div className="flex flex-col gap-1.5">
+          <span className="font-medium">Images ({((p.assetIds as string[]) ?? []).length})</span>
+          <AssetPicker draft={draft} urls={urls} kind="image" multiple selected={(p.assetIds as string[]) ?? []} onChange={(ids) => onProps({ ...p, assetIds: ids })} onUpload={openAssets} />
+        </div>
+        <Segmented label="Columns" value={String(p.columns ?? 3)} options={[["2", "2"], ["3", "3"], ["4", "4"]]} onChange={(v) => onProps({ ...p, columns: Number(v) })} />
+        {text("caption", "Caption", 300)}
+      </>
+    );
+  }
+  if (block.type === "file_download") {
+    return (
+      <>
+        {text("label", "Heading", 80)}
+        <div className="flex flex-col gap-1.5">
+          <span className="font-medium">Files</span>
+          <AssetPicker draft={draft} urls={urls} kind="any" multiple selected={(p.assetIds as string[]) ?? []} onChange={(ids) => onProps({ ...p, assetIds: ids })} onUpload={openAssets} />
+        </div>
+        <p className="rounded-md bg-paper p-3 text-[13px] text-muted">Clients can only download files marked as downloadable in Assets.</p>
+      </>
+    );
+  }
+  // dos_donts
+  const items = (p.items as Array<{ assetId: string | null; kind: "do" | "dont"; note: string }>) ?? [];
+  const setItems = (next: typeof items) => onProps({ ...p, items: next });
+  return (
+    <div className="flex flex-col gap-3">
+      {items.map((item, i) => (
+        <div key={i} className="flex flex-col gap-2 rounded-md border border-line p-2.5">
+          <Segmented label={`Example ${i + 1}`} value={item.kind} options={[["do", "Do"], ["dont", "Don't"]]} onChange={(v) => setItems(items.map((x, j) => (j === i ? { ...x, kind: v as "do" | "dont" } : x)))} />
+          <AssetPicker draft={draft} urls={urls} kind="image" multiple={false} selected={item.assetId ? [item.assetId] : []} onChange={(ids) => setItems(items.map((x, j) => (j === i ? { ...x, assetId: ids[0] ?? null } : x)))} onUpload={openAssets} />
+          <input
+            key={`${block.id}-note-${i}-${item.note}`}
+            defaultValue={item.note}
+            maxLength={300}
+            placeholder={item.kind === "do" ? "e.g. Use the full-colour logo on Shell" : "e.g. Don't stretch the logo"}
+            onBlur={(e) => setItems(items.map((x, j) => (j === i ? { ...x, note: e.currentTarget.value } : x)))}
+            className="h-9 rounded-[var(--radius-control)] border border-line-strong px-2.5 text-sm outline-none focus:border-accent"
+          />
+          <button type="button" onClick={() => setItems(items.filter((_, j) => j !== i))} className="self-end text-xs text-danger">
+            Remove example
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={items.length >= 24}
+        onClick={() => setItems([...items, { assetId: null, kind: items.length % 2 ? "dont" : "do", note: "" }])}
+        className="rounded-md border border-dashed border-line-strong px-3 py-2"
+      >
+        Add example
+      </button>
+    </div>
   );
 }

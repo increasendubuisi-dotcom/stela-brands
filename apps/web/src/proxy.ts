@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Runs before every page request: refreshes the Supabase session cookie and
 // keeps signed-out visitors away from the designer app.
-const PROTECTED = ["/dashboard", "/brands", "/account"];
+const PROTECTED = ["/dashboard", "/brands", "/account", "/preview"];
 const AUTH_PAGES = ["/sign-in", "/sign-up"];
 
 export async function proxy(request: NextRequest) {

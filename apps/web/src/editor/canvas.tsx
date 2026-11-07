@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { formatBytes } from "./assets-panel";
 import { colorValues, contrastRatio, STRATEGY_FIELD_KEYS, type BlockType, type StrategyFieldKey } from "@stela/brand-schema";
 import { familyCss, weightsByFamily } from "./brand-system";
 import { childSections, docToText, sectionBlocks, strategyText, textToDoc, type BlockRow, type Draft, type SectionRow } from "./model";
@@ -23,13 +24,11 @@ export const STRATEGY_LABELS: Record<StrategyFieldKey, string> = {
 };
 
 const LATER_STAGE: Partial<Record<BlockType, string>> = {
-  image: "Image",
-  video: "Video",
-  gallery: "Image gallery",
-  file_download: "File download",
-  dos_donts: "Do's and don'ts",
   grid: "Grid",
 };
+
+/** Short-lived URLs for the brand's private files, keyed by asset id. */
+export const AssetUrls = createContext<Record<string, string>>({});
 
 export type CanvasActions = {
   selectBlock: (id: string | null) => void;
@@ -219,6 +218,16 @@ function BlockView({ draft, block, actions }: { draft: Draft; block: BlockRow; a
       return <SpecimenView draft={draft} block={block} />;
     case "type_family":
       return <FamilyView draft={draft} block={block} />;
+    case "image":
+      return <ImageView draft={draft} block={block} />;
+    case "video":
+      return <VideoView draft={draft} block={block} />;
+    case "gallery":
+      return <GalleryView draft={draft} block={block} />;
+    case "file_download":
+      return <DownloadView draft={draft} block={block} />;
+    case "dos_donts":
+      return <DosDontsView draft={draft} block={block} />;
     default:
       return (
         <div className="rounded-md border border-dashed border-line-strong bg-paper px-4 py-5 text-sm text-muted">
@@ -316,7 +325,11 @@ function AddBlockMenu({ sectionId, afterId, actions, compact }: {
               <MenuChoice title="Colour combinations" hint="Approved pairings with contrast checks" onClick={() => add("color_combinations")} />
               <MenuChoice title="Type specimen" hint="Your type hierarchy, rendered" onClick={() => add("type_specimen")} />
               <MenuChoice title="Typeface" hint="One typeface with its weights and characters" onClick={() => add("type_family")} />
-              <p className="px-2.5 py-2 text-xs text-subtle">Image, video and file blocks arrive with asset uploads.</p>
+              <MenuChoice title="Image" hint="A logo, illustration or photo" onClick={() => add("image")} />
+              <MenuChoice title="Gallery" hint="Several images in a grid" onClick={() => add("gallery")} />
+              <MenuChoice title="Video" hint="Logo animation, motion examples" onClick={() => add("video")} />
+              <MenuChoice title="Do's and don'ts" hint="Correct and incorrect usage, side by side" onClick={() => add("dos_donts")} />
+              <MenuChoice title="File download" hint="Files clients can download" onClick={() => add("file_download")} />
             </>
           )}
         </div>
@@ -538,6 +551,166 @@ function FamilyView({ draft, block }: { draft: Draft; block: BlockRow }) {
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Asset blocks
+// ---------------------------------------------------------------------------
+
+function MissingFile() {
+  return <span className="flex h-full min-h-24 items-center justify-center rounded bg-paper text-xs text-muted">File unavailable</span>;
+}
+
+function ImageView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const urls = useContext(AssetUrls);
+  const asset = block.props.assetId ? draft.assets[block.props.assetId as string] : undefined;
+  const bg = block.props.background ? draft.colors[block.props.background as string]?.hex : undefined;
+  const caption = block.props.caption as string | null;
+  if (!asset) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Image.</strong> Choose an image in the settings panel.
+      </EmptyBlockHint>
+    );
+  }
+  const url = urls[asset.id];
+  return (
+    <figure className="flex flex-col gap-2">
+      <div className="flex items-center justify-center overflow-hidden rounded border border-black/5 p-0" style={{ background: bg ?? "#F6F4EF" }}>
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt={String(block.props.alt ?? "")}
+            className={`max-h-[520px] w-full ${block.props.fit === "cover" ? "object-cover" : "object-contain p-8"}`}
+          />
+        ) : (
+          <MissingFile />
+        )}
+      </div>
+      {caption ? <figcaption className="text-sm text-muted">{caption}</figcaption> : null}
+    </figure>
+  );
+}
+
+function VideoView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const urls = useContext(AssetUrls);
+  const asset = block.props.assetId ? draft.assets[block.props.assetId as string] : undefined;
+  if (!asset) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Video.</strong> Choose a video in the settings panel.
+      </EmptyBlockHint>
+    );
+  }
+  const url = urls[asset.id];
+  return (
+    <figure className="flex flex-col gap-2">
+      {url ? (
+        <video
+          src={url}
+          controls
+          muted={Boolean(block.props.autoplay)}
+          autoPlay={Boolean(block.props.autoplay)}
+          loop={Boolean(block.props.loop)}
+          playsInline
+          className="w-full rounded bg-black"
+        />
+      ) : (
+        <MissingFile />
+      )}
+      {block.props.caption ? <figcaption className="text-sm text-muted">{String(block.props.caption)}</figcaption> : null}
+    </figure>
+  );
+}
+
+function GalleryView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const urls = useContext(AssetUrls);
+  const assets = ((block.props.assetIds as string[]) ?? []).map((id) => draft.assets[id]).filter((a): a is NonNullable<typeof a> => Boolean(a));
+  if (!assets.length) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Gallery.</strong> Choose images in the settings panel.
+      </EmptyBlockHint>
+    );
+  }
+  const columns = Math.max(1, Math.min(6, Number(block.props.columns ?? 3)));
+  return (
+    <figure className="flex flex-col gap-2">
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+        {assets.map((a) =>
+          urls[a.id] && a.mime.startsWith("image/") ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={a.id} src={urls[a.id]} alt={a.name} className="aspect-square w-full rounded border border-black/5 bg-[#F6F4EF] object-contain p-3" />
+          ) : (
+            <MissingFile key={a.id} />
+          ),
+        )}
+      </div>
+      {block.props.caption ? <figcaption className="text-sm text-muted">{String(block.props.caption)}</figcaption> : null}
+    </figure>
+  );
+}
+
+function DownloadView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const assets = ((block.props.assetIds as string[]) ?? []).map((id) => draft.assets[id]).filter((a): a is NonNullable<typeof a> => Boolean(a));
+  if (!assets.length) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">File download.</strong> Choose files in the settings panel.
+      </EmptyBlockHint>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium">{String(block.props.label ?? "Download")}</span>
+      {assets.map((a) => (
+        <div key={a.id} className="flex items-center gap-3 rounded border border-line p-3 text-sm">
+          <span className="min-w-0 flex-1 truncate">{a.name}</span>
+          <span className="text-xs text-muted">{formatBytes(a.size)}</span>
+          {!a.client_visible ? <span className="text-xs text-[#8a5a00]">Not downloadable: tick it in Assets</span> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type DosItem = { assetId: string | null; kind: "do" | "dont"; note: string };
+
+function DosDontsView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const urls = useContext(AssetUrls);
+  const items = (block.props.items as DosItem[]) ?? [];
+  if (!items.length) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Do&apos;s and don&apos;ts.</strong> Add examples in the settings panel.
+      </EmptyBlockHint>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {items.map((item, i) => {
+        const asset = item.assetId ? draft.assets[item.assetId] : undefined;
+        const url = asset ? urls[asset.id] : undefined;
+        return (
+          <figure key={i} className="flex flex-col gap-2">
+            <div className={`relative overflow-hidden rounded border-2 bg-[#F6F4EF] ${item.kind === "do" ? "border-[#2F7A4F]" : "border-[#A3361F]"}`}>
+              {url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={url} alt="" className="aspect-[4/3] w-full object-contain p-6" />
+              ) : (
+                <span className="flex aspect-[4/3] items-center justify-center text-xs text-muted">No image</span>
+              )}
+            </div>
+            <figcaption className="flex gap-2 text-sm">
+              <strong className={item.kind === "do" ? "text-[#2F7A4F]" : "text-[#A3361F]"}>{item.kind === "do" ? "Do" : "Don't"}</strong>
+              <span>{item.note}</span>
+            </figcaption>
+          </figure>
+        );
+      })}
     </div>
   );
 }

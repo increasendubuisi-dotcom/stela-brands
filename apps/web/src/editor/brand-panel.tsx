@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { colorValues, isValidHex, normalizeHex } from "@stela/brand-schema";
 import { COLOR_GROUPS, colorsInGroup, familyCss, orderedStyles } from "./brand-system";
+import { familyFontFiles } from "./assets";
 import { extractFromFile, type ExtractedColor } from "./extract-colors";
 import type { ColorRow, Draft, FamilyRow, StyleRow } from "./model";
 import { PlusIcon } from "./section-tree";
@@ -19,12 +20,15 @@ export type BrandActions = {
   updateStyle: (id: string, patch: Partial<Omit<StyleRow, "id" | "position">>) => void;
   deleteStyle: (id: string) => void;
   addStandardScale: () => void;
+  uploadFontFiles: (familyId: string, files: File[]) => Promise<void>;
+  deleteFontFile: (id: string) => void;
+  setFontLicence: (familyId: string, downloadable: boolean, note: string | null) => void;
 };
 
 const field =
   "h-9 w-full rounded-[var(--radius-control)] border border-line-strong bg-surface px-2.5 text-sm outline-none focus:border-accent";
 
-export function BrandPanel({ draft, actions }: { draft: Draft; actions: BrandActions }) {
+export function BrandPanel({ draft, actions }: { draft: Draft; actions: BrandActions; urls?: Record<string, string> }) {
   return (
     <div className="flex flex-col gap-7 text-sm">
       <ColourSection draft={draft} actions={actions} />
@@ -344,8 +348,9 @@ function TypeSection({ draft, actions }: { draft: Draft; actions: BrandActions }
               <option value="secondary">Secondary</option>
               <option value="other">Other</option>
             </select>
-            <span>{f.source === "google" ? "Google Fonts" : f.source === "system" ? "System font" : "Uploaded"}</span>
+            <span>{f.source === "google" ? "Google Fonts" : f.source === "system" ? "System font" : "Uploaded files"}</span>
           </div>
+          {f.source === "upload" ? <UploadedFontFiles family={f} draft={draft} actions={actions} /> : null}
         </div>
       ))}
       {addingFamily ? (
@@ -475,12 +480,16 @@ function AddFamilyForm({ onAdd, onCancel }: { onAdd: (input: { name: string; sou
         Source
         <select value={source} onChange={(e) => setSource(e.target.value as FamilyRow["source"])} className={field}>
           <option value="google">Google Fonts</option>
+          <option value="upload">Upload font files (.woff2, .woff, .ttf, .otf)</option>
           <option value="system">Installed on the viewer's device</option>
         </select>
       </label>
       <p className="text-xs leading-relaxed text-muted">
-        {source === "google" ? "Use the exact name from fonts.google.com." : "Only use for fonts like Arial or Georgia that every device has."} Uploading
-        your own font files arrives with asset uploads.
+        {source === "google"
+          ? "Use the exact name from fonts.google.com."
+          : source === "upload"
+            ? "After adding, upload a file for each weight. Check the font's licence allows web use."
+            : "Only use for fonts like Arial or Georgia that every device has."}
       </p>
       {error ? <p className="text-xs text-danger">{error}</p> : null}
       <div className="flex gap-2">
@@ -551,5 +560,58 @@ function SmallButton({ children, onClick, disabled, danger }: { children: ReactN
     <button type="button" disabled={disabled} onClick={onClick} className={`rounded px-2 py-1 text-xs hover:bg-surface disabled:opacity-30 ${danger ? "text-danger" : ""}`}>
       {children}
     </button>
+  );
+}
+
+function UploadedFontFiles({ family, draft, actions }: { family: FamilyRow; draft: Draft; actions: BrandActions }) {
+  const files = familyFontFiles(draft, family.id);
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-line pt-2">
+      {files.map((ff) => (
+        <div key={ff.id} className="flex items-center gap-2 text-xs">
+          <span style={{ fontFamily: familyCss(family), fontWeight: ff.weight, fontStyle: ff.style }} className="flex-1 truncate text-sm">
+            {ff.weight} {ff.style === "italic" ? "Italic" : ""}
+          </span>
+          <span className="truncate text-muted">{draft.assets[ff.asset_id]?.name}</span>
+          <SmallButton danger onClick={() => actions.deleteFontFile(ff.id)}>Remove</SmallButton>
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => input.current?.click()}
+        className="self-start text-xs text-accent hover:underline disabled:opacity-50"
+      >
+        {busy ? "Uploading…" : files.length ? "Add more weights" : "Upload font files"}
+      </button>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept=".woff2,.woff,.ttf,.otf"
+        className="sr-only"
+        aria-label={`Upload font files for ${family.name}`}
+        onChange={async (e) => {
+          const list = [...(e.target.files ?? [])];
+          e.target.value = "";
+          if (!list.length) return;
+          setBusy(true);
+          await actions.uploadFontFiles(family.id, list);
+          setBusy(false);
+        }}
+      />
+      <p className="text-[11px] leading-relaxed text-muted">Weight and style are read from each file name, e.g. Brand-SemiBoldItalic.woff2.</p>
+      <label className="flex items-start gap-2 text-xs">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={family.downloadable}
+          onChange={(e) => actions.setFontLicence(family.id, e.target.checked, family.licence_note)}
+        />
+        <span>Licence allows clients to download these files</span>
+      </label>
+    </div>
   );
 }

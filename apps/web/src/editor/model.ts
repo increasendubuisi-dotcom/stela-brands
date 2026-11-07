@@ -79,6 +79,28 @@ export type StyleRow = {
   position: number;
 };
 
+export type AssetCategory = "logo" | "font" | "illustration" | "pattern" | "icon" | "photography" | "video" | "mockup" | "other";
+
+export type AssetRow = {
+  id: string;
+  category: AssetCategory;
+  name: string;
+  storage_path: string;
+  mime: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  client_visible: boolean;
+};
+
+export type FontFileRow = {
+  id: string;
+  family_id: string;
+  weight: number;
+  style: "normal" | "italic";
+  asset_id: string;
+};
+
 export type Draft = {
   sections: Record<string, SectionRow>;
   blocks: Record<string, BlockRow>;
@@ -86,6 +108,8 @@ export type Draft = {
   colors: Record<string, ColorRow>;
   families: Record<string, FamilyRow>;
   styles: Record<string, StyleRow>;
+  assets: Record<string, AssetRow>;
+  fontFiles: Record<string, FontFileRow>;
 };
 
 export type Result = {

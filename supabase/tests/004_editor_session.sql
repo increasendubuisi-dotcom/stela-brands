@@ -81,6 +81,20 @@ select tests.ok(
 select tests.ok(
   (select max(jsonb_array_length(props -> 'styleIds')) from public.blocks where brand_id = 'b8000000-0000-4000-8000-000000000001' and type = 'type_specimen') = 4,
   'deleting a style removed it from the specimen');
+select tests.ok(
+  (select count(*) from public.assets where brand_id = 'b8000000-0000-4000-8000-000000000001')
+  = (select (doc -> 'expect' ->> 'assetCount')::int from session_input),
+  'asset rows match the editor (the deleted one is gone)');
+select tests.ok(
+  (select string_agg(t, '|') from (
+     select jsonb_array_elements_text(b.props -> 'assetIds') t from public.blocks b
+     where b.brand_id = 'b8000000-0000-4000-8000-000000000001' and b.type = 'gallery') x)
+  = (select doc -> 'expect' ->> 'galleryIds' from session_input),
+  'deleting an asset removed it from the gallery');
+select tests.ok(
+  (select count(*) from public.font_files where brand_id = 'b8000000-0000-4000-8000-000000000001')
+  = (select (doc -> 'expect' ->> 'fontFileCount')::int from session_input),
+  'uploaded font file attached to its typeface');
 reset role;
 
 \echo 'Editor session tests passed.'

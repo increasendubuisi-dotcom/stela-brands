@@ -31,10 +31,11 @@ import {
   orderedStyles,
   updateColor,
 } from "../apps/web/src/editor/brand-system";
+import { addAsset, addFontFile, deleteAsset } from "../apps/web/src/editor/assets";
 
 // Start from the Essentials template, exactly as the app creates it.
 const templateOps = templateToOps(TEMPLATES.essentials!);
-let draft: Draft = { sections: {}, blocks: {}, strategy: {}, colors: {}, families: {}, styles: {} };
+let draft: Draft = { sections: {}, blocks: {}, strategy: {}, colors: {}, families: {}, styles: {}, assets: {}, fontFiles: {} };
 for (const op of templateOps) {
   if (op.table === "sections") draft.sections[op.row.id as string] = op.row as unknown as SectionRow;
   if (op.table === "blocks") draft.blocks[op.row.id as string] = { parent_block_id: null, ...(op.row as object) } as BlockRow;
@@ -97,6 +98,34 @@ run(addBlock(draft, typography!.id, "type_specimen", null, { styleIds }));
 run(deleteStyle(draft, styleIds[4]!));
 save();
 
+// Batch 7: assets. Files uploaded to storage become asset rows; blocks reference them;
+// a font file attaches to an uploaded typeface; deleting a used asset cleans up.
+const BRAND = "b8000000-0000-4000-8000-000000000001";
+const assetRow = (id: string, name: string, mime: string, category: "logo" | "photography" | "font", visible: boolean) => ({
+  id,
+  category,
+  name,
+  storage_path: `${BRAND}/${id}/${name}`,
+  mime,
+  size: 2048,
+  width: mime.startsWith("image/") ? 400 : null,
+  height: mime.startsWith("image/") ? 200 : null,
+  client_visible: visible,
+});
+const logoId = "a5500000-0000-4000-8000-000000000001";
+const photoId = "a5500000-0000-4000-8000-000000000002";
+const fontId = "a5500000-0000-4000-8000-000000000003";
+run(addAsset(draft, assetRow(logoId, "osan-logo.svg", "image/svg+xml", "logo", true)));
+run(addAsset(draft, assetRow(photoId, "market.jpg", "image/jpeg", "photography", false)));
+run(addAsset(draft, assetRow(fontId, "BrandSans-Bold.woff2", "font/woff2", "font", false)));
+const logoSection = childSections(draft, null).find((s) => s.title === "Logo")!;
+run(addBlock(draft, logoSection.id, "image", null, { assetId: logoId, alt: "Osan logo" }));
+const gallery = run(addBlock(draft, logoSection.id, "gallery", null, { assetIds: [logoId, photoId] })).created!;
+const brandSans = run(addFamily(draft, { name: "Brand Sans", source: "upload" })).created!;
+run(addFontFile(draft, { family_id: brandSans, asset_id: fontId, weight: 700, style: "normal" }));
+run(deleteAsset(draft, photoId));
+save();
+
 const top = childSections(draft, null);
 const paletteBlock = draft.blocks[palette]!;
 process.stdout.write(
@@ -112,6 +141,9 @@ process.stdout.write(
       colorCount: Object.keys(draft.colors).length,
       styleNames: orderedStyles(draft).map((s) => s.name).join("|"),
       redHex: draft.colors[red]!.hex,
+      assetCount: Object.keys(draft.assets).length,
+      galleryIds: (draft.blocks[gallery]!.props.assetIds as string[]).join("|"),
+      fontFileCount: Object.keys(draft.fontFiles).length,
     },
   }),
 );
