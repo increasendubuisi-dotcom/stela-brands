@@ -428,8 +428,13 @@ export function deleteBlock(draft: Draft, id: string): Result {
 // Strategy
 // ---------------------------------------------------------------------------
 
-export function setStrategy(draft: Draft, key: StrategyFieldKey, value: string): Result {
-  const row: StrategyRow = { key, value: value.slice(0, 4000), status: "approved", source: "manual" };
+export function setStrategy(
+  draft: Draft,
+  key: StrategyFieldKey,
+  value: string,
+  source: StrategyRow["source"] = "manual",
+): Result {
+  const row: StrategyRow = { key, value: value.slice(0, 4000), status: "approved", source };
   return {
     draft: { ...draft, strategy: { ...draft.strategy, [key]: row } },
     ops: [{ op: "upsert", table: "strategy_fields", row: { ...row } }],

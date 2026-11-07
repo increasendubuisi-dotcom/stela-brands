@@ -5,7 +5,17 @@ import type { AssetRow, BlockRow, ColorRow, Draft, FamilyRow, FontFileRow, Secti
 
 export const ASSET_BUCKET = "brand-assets";
 
-export type DraftBrand = { id: string; name: string; slug: string; description: string | null; status: string; draft_rev: number; theme_key: string };
+export type DraftBrand = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  website_url: string | null;
+  status: string;
+  draft_rev: number;
+  theme_key: string;
+};
 
 const byId = <T extends { id: string }>(rows: T[]) => Object.fromEntries(rows.map((r) => [r.id, r]));
 
@@ -13,7 +23,7 @@ const byId = <T extends { id: string }>(rows: T[]) => Object.fromEntries(rows.ma
 export async function loadDraft(supabase: SupabaseClient, brandId: string): Promise<{ brand: DraftBrand; draft: Draft } | null> {
   const { data: brand } = await supabase
     .from("brands")
-    .select("id, name, slug, description, status, draft_rev, theme_key")
+    .select("id, workspace_id, name, slug, description, website_url, status, draft_rev, theme_key")
     .eq("id", brandId)
     .maybeSingle();
   if (!brand) return null;

@@ -24,6 +24,19 @@ Status key: Not started · In progress · Completed · Tested · Blocked
 | 16 | Client downloads | Completed | Single files via short-lived signed links; Download all zips in the browser. Needs SUPABASE_SERVICE_ROLE_KEY. |
 | 17 | Entitlements | Tested | Plans in config with brief's NGN prices; limits and annual prices are proposals. |
 
+## Phase 2 — AI brand strategy assistant
+
+| # | Feature | Status | Notes |
+| --- | --- | --- | --- |
+| 18 | AI data: conversations, messages, project memory, proposals, monthly usage | Tested | Per-brand access like the guide; usage only increases, through a function; 10 database tests. Applied to Supabase. |
+| 19 | Provider layer | Completed | OpenAI through the AI SDK behind one module (`ai/provider.ts`); model set by `AI_MODEL` (default gpt-6-luna). Key is server-only. |
+| 20 | Brand context and prompts | Tested | Strategy, sections with ids, colours, type and memory, capped in length. |
+| 21 | Discovery chat | Completed | Streams replies; saved after streaming; memory refreshed every few messages. Needs OPENAI_API_KEY. |
+| 22 | Populate the guide | Tested | Structured suggestions; item-by-item review; replacements start unticked; text is added as new blocks, never over existing ones; strategy marked as AI-written. |
+| 23 | Improve with AI | Completed | Text and strategy blocks: improve, shorter, warmer, bolder; shows the rewrite, applies only on "Use this". |
+| 24 | Usage limits | Completed | Monthly tokens from the plan (Starter 20k, AI 2M, Studio 5M); Basic has none. |
+
 ## Decisions awaiting approval
 
+- Starter gets a small AI allowance (20k tokens a month) as a taste; Basic gets none, per the brief.
 - Starter (free) tier limits, annual prices (10 × monthly) and per-plan limits in `packages/entitlements/src/plans.ts`.

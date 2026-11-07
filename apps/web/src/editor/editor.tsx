@@ -28,6 +28,7 @@ import { AssetPicker, AssetsPanel, type AssetActions, type UploadState } from ".
 import { addAsset, addFontFile, assetUsage, deleteAsset, deleteFontFile, guessFontWeight, updateAsset } from "./assets";
 import { AssetUrls } from "./canvas";
 import { PublishPanel, type PublishedInfo } from "./publish-panel";
+import { AssistantPanel, ImproveTool } from "./assistant-panel";
 import { uploadAsset } from "./upload";
 import { contrastRatio } from "@stela/brand-schema";
 import {
@@ -41,6 +42,9 @@ import {
   moveBlock,
   moveSection,
   setStrategy,
+  strategyText,
+  docToText,
+  textToDoc,
   topLevelAncestor,
   updateBlockLayout,
   updateBlockProps,
@@ -71,6 +75,7 @@ export function Editor({ brand, initial, rev, assetUrls, uploadLimitMb, publishe
   const [focusSection, setFocusSection] = useState<string | null>(null);
   const [tab, setTab] = useState<"guide" | "brand" | "assets">("guide");
   const [notice, setNotice] = useState<string | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const selectedSection = sectionId ? draft.sections[sectionId] : undefined;
   const rootId = selectedSection ? topLevelAncestor(draft, selectedSection.id) : childSections(draft, null)[0]?.id ?? null;
@@ -233,6 +238,14 @@ export function Editor({ brand, initial, rev, assetUrls, uploadLimitMb, publishe
         <span className="rounded-full bg-[#f0eee8] px-2 py-0.5 text-xs capitalize text-muted">{brand.status}</span>
         <SaveIndicator status={status} />
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setAssistantOpen((o) => !o)}
+          aria-pressed={assistantOpen}
+          className={`rounded-md border px-3 py-1.5 text-sm ${assistantOpen ? "border-accent bg-paper text-accent" : "border-line hover:bg-paper"}`}
+        >
+          Assistant
+        </button>
         <PublishPanel brand={brand} status={status} published={published} />
       </div>
 
@@ -287,9 +300,11 @@ export function Editor({ brand, initial, rev, assetUrls, uploadLimitMb, publishe
           )}
         </main>
 
-        <aside className="w-full border-l border-line bg-surface p-5 lg:w-[300px]" aria-label="Settings">
-          {selectedBlock ? (
-            <BlockSettings draft={draft} urls={urls} block={selectedBlock} openBrand={() => setTab("brand")} openAssets={() => setTab("assets")} onLayout={(layout) => run((d) => updateBlockLayout(d, selectedBlock.id, layout))} onProps={(props) => run((d) => updateBlockProps(d, selectedBlock.id, props))} />
+        <aside className={`w-full border-l border-line bg-surface p-5 ${assistantOpen ? "lg:sticky lg:top-0 lg:max-h-[calc(100vh-110px)] lg:w-[380px] lg:overflow-auto" : "lg:w-[300px]"}`} aria-label={assistantOpen ? "Assistant" : "Settings"}>
+          {assistantOpen ? (
+            <AssistantPanel brandId={brand.id} draft={draft} run={run} onClose={() => setAssistantOpen(false)} />
+          ) : selectedBlock ? (
+            <BlockSettings brandId={brand.id} onStrategy={(key, value) => run((d) => setStrategy(d, key, value))} draft={draft} urls={urls} block={selectedBlock} openBrand={() => setTab("brand")} openAssets={() => setTab("assets")} onLayout={(layout) => run((d) => updateBlockLayout(d, selectedBlock.id, layout))} onProps={(props) => run((d) => updateBlockProps(d, selectedBlock.id, props))} />
           ) : selectedSection ? (
             <SectionSettings section={selectedSection} tree={tree} />
           ) : (
@@ -386,7 +401,9 @@ const BLOCK_NAMES: Partial<Record<BlockType, string>> = {
   dos_donts: "Do's and don'ts",
 };
 
-function BlockSettings({ draft, urls, block, openBrand, openAssets, onLayout, onProps }: {
+function BlockSettings({ brandId, onStrategy, draft, urls, block, openBrand, openAssets, onLayout, onProps }: {
+  brandId: string;
+  onStrategy: (key: StrategyFieldKey, value: string) => void;
   draft: Draft;
   urls: Record<string, string>;
   openAssets: () => void;
@@ -444,10 +461,18 @@ function BlockSettings({ draft, urls, block, openBrand, openAssets, onLayout, on
             onChange={(v) => onProps({ ...block.props, display: v })}
           />
           <p className="rounded-md bg-paper p-3 text-[13px] leading-relaxed text-muted">
-            Strategy fields are shared. Editing this text changes it everywhere this field appears, and the assistant will
-            read it in Phase 2.
+            Strategy fields are shared. Editing this text changes it everywhere this field appears, and the assistant
+            reads it.
           </p>
+          <ImproveTool
+            brandId={brandId}
+            text={strategyText(draft.strategy[block.props.fieldKey as StrategyFieldKey])}
+            onUse={(text) => onStrategy(block.props.fieldKey as StrategyFieldKey, text)}
+          />
         </>
+      ) : null}
+      {block.type === "text" ? (
+        <ImproveTool brandId={brandId} text={docToText(block.props.doc)} onUse={(text) => onProps({ ...block.props, doc: textToDoc(text) })} />
       ) : null}
     </div>
   );
