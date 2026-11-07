@@ -6,7 +6,7 @@ Status key: Not started · In progress · Completed · Tested · Blocked
 
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
-| 1 | Repo, CI, schema + RLS | Tested | 53 database tests, 37 unit tests. Not yet applied to a live Supabase project. |
+| 1 | Repo, CI, schema + RLS | Tested | 60 database tests, 37 unit tests. Applied to Supabase project stela-brands (London); live smoke test passed. |
 | 2 | Authentication and profiles | In progress | Signup trigger creates profile, studio and Starter plan (tested). Sign-in screens not built. |
 | 3 | Dashboard | Not started | |
 | 4 | New brand flow | Not started | |

@@ -26,7 +26,7 @@ create type public.content_origin as enum ('manual', 'ai');
 -- ---------------------------------------------------------------------------
 
 create function public.set_updated_at() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = public as $$
 begin
   new.updated_at := now();
   return new;
@@ -331,7 +331,7 @@ $$;
 
 -- Sections may nest, but never in a loop and never deeper than 4 levels.
 create function public.check_section_tree() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = public as $$
 declare
   v_depth integer;
   v_cycle boolean;
@@ -359,7 +359,7 @@ create trigger sections_tree before insert or update of parent_id on public.sect
   for each row execute function public.check_section_tree();
 
 create function public.prevent_version_update() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = public as $$
 begin
   raise exception 'Published versions are immutable' using errcode = 'insufficient_privilege';
 end;
@@ -415,12 +415,12 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 create function public.can_view_brand(p_brand uuid) returns boolean
-language sql stable as $$
+language sql stable set search_path = public as $$
   select public.brand_role_of(p_brand) is not null;
 $$;
 
 create function public.can_edit_brand(p_brand uuid) returns boolean
-language sql stable as $$
+language sql stable set search_path = public as $$
   select coalesce(public.brand_role_of(p_brand) in ('owner', 'admin', 'editor'), false);
 $$;
 
@@ -720,6 +720,8 @@ $$;
 -- ---------------------------------------------------------------------------
 
 grant usage on schema public to anon, authenticated;
+-- Supabase grants anon table access by default; visitors only use get_published_guide.
+revoke all on all tables in schema public from anon;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 revoke all on public.guide_access_secrets from anon, authenticated;
 revoke insert, update, delete on public.subscriptions from authenticated;
