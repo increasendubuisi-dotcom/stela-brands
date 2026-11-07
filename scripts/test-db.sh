@@ -42,6 +42,7 @@ OPS_VARS=()
 for t in complete essentials blank; do
   OPS_VARS+=(-v "ops_$t=$("$TSX" "$ROOT/scripts/template-ops.ts" "$t")")
 done
+OPS_VARS+=(-v "editor_session=$("$TSX" "$ROOT/scripts/editor-session.ts")")
 
 for f in "$ROOT"/supabase/tests/[0-9]*.sql; do
   echo "test: $(basename "$f")"
