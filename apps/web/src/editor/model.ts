@@ -47,10 +47,45 @@ export type StrategyRow = {
   source: "manual" | "ai";
 };
 
+export type ColorRow = {
+  id: string;
+  name: string;
+  hex: string;
+  cmyk_override: { c: number; m: number; y: number; k: number } | null;
+  pantone: string | null;
+  color_group: "primary" | "secondary" | "supporting";
+  position: number;
+};
+
+export type FamilyRow = {
+  id: string;
+  name: string;
+  source: "upload" | "google" | "system";
+  role: "primary" | "secondary" | "other";
+  fallback: string;
+  licence_note: string | null;
+  downloadable: boolean;
+};
+
+export type StyleRow = {
+  id: string;
+  name: string;
+  family_id: string;
+  weight: number;
+  size: number;
+  line_height: number;
+  tracking: number;
+  text_transform: "none" | "uppercase";
+  position: number;
+};
+
 export type Draft = {
   sections: Record<string, SectionRow>;
   blocks: Record<string, BlockRow>;
   strategy: Partial<Record<StrategyFieldKey, StrategyRow>>;
+  colors: Record<string, ColorRow>;
+  families: Record<string, FamilyRow>;
+  styles: Record<string, StyleRow>;
 };
 
 export type Result = {
@@ -60,6 +95,8 @@ export type Result = {
   drop?: string[];
   /** Id of a newly created row, for focusing it in the UI. */
   created?: string;
+  /** Set when the command was refused; nothing changed. */
+  error?: string;
 };
 
 export type NewId = () => string;

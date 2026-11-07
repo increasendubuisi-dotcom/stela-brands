@@ -22,10 +22,19 @@ import {
   type SectionRow,
 } from "../apps/web/src/editor/model";
 import { SaveQueue } from "../apps/web/src/editor/save-queue";
+import {
+  addColor,
+  addFamily,
+  addStandardScale,
+  deleteColor,
+  deleteStyle,
+  orderedStyles,
+  updateColor,
+} from "../apps/web/src/editor/brand-system";
 
 // Start from the Essentials template, exactly as the app creates it.
 const templateOps = templateToOps(TEMPLATES.essentials!);
-let draft: Draft = { sections: {}, blocks: {}, strategy: {} };
+let draft: Draft = { sections: {}, blocks: {}, strategy: {}, colors: {}, families: {}, styles: {} };
 for (const op of templateOps) {
   if (op.table === "sections") draft.sections[op.row.id as string] = op.row as unknown as SectionRow;
   if (op.table === "blocks") draft.blocks[op.row.id as string] = { parent_block_id: null, ...(op.row as object) } as BlockRow;
@@ -69,7 +78,27 @@ run(deleteBlock(draft, storyText));
 run(deleteSection(draft, colourCopy));
 save();
 
+// Batch 5: brand system. Colours, a palette using them, recolour, delete one in use.
+const red = run(addColor(draft, { name: "Pepper Red", hex: "c8402b" })).created!;
+const ink = run(addColor(draft, { name: "Ink", hex: "#1b1b1b", group: "secondary" })).created!;
+const palm = run(addColor(draft, { name: "Palm Oil", hex: "#E9A23B" })).created!;
+const palette = run(addBlock(draft, colour!.id, "palette", null, { tokenIds: [red, palm, ink] })).created!;
+run(addBlock(draft, colour!.id, "color_combinations", palette, { pairs: [{ foregroundId: ink, backgroundId: palm }] }));
+run(updateColor(draft, red, { hex: "#B33A26", cmyk_override: { c: 0, m: 80, y: 95, k: 10 } }));
+run(deleteColor(draft, palm));
+save();
+
+// Batch 6: typography. Two typefaces, a standard scale, a specimen, delete a style it shows.
+const serif = run(addFamily(draft, { name: "Fraunces" })).created!;
+const sans = run(addFamily(draft, { name: "DM Sans" })).created!;
+run(addStandardScale(draft, serif, sans));
+const styleIds = orderedStyles(draft).map((s) => s.id);
+run(addBlock(draft, typography!.id, "type_specimen", null, { styleIds }));
+run(deleteStyle(draft, styleIds[4]!));
+save();
+
 const top = childSections(draft, null);
+const paletteBlock = draft.blocks[palette]!;
 process.stdout.write(
   JSON.stringify({
     batches,
@@ -79,6 +108,10 @@ process.stdout.write(
       blockCount: Object.keys(draft.blocks).length,
       storyBlocks: sectionBlocks(draft, story).map((b) => b.type).join("|"),
       hiddenTitle: Object.values(draft.sections).find((s) => s.hidden)?.title ?? "",
+      paletteTokens: (paletteBlock.props.tokenIds as string[]).join("|"),
+      colorCount: Object.keys(draft.colors).length,
+      styleNames: orderedStyles(draft).map((s) => s.name).join("|"),
+      redHex: draft.colors[red]!.hex,
     },
   }),
 );

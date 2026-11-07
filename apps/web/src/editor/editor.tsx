@@ -3,7 +3,28 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { BlockType, StrategyFieldKey } from "@stela/brand-schema";
-import { Canvas, STRATEGY_LABELS, type CanvasActions } from "./canvas";
+import { BrandPanel, type BrandActions } from "./brand-panel";
+import {
+  addColor,
+  addFamily,
+  addStandardScale,
+  addStyle,
+  allColors,
+  colorUsage,
+  COLOR_GROUPS,
+  colorsInGroup,
+  deleteColor,
+  deleteFamily,
+  deleteStyle,
+  moveColor,
+  orderedStyles,
+  updateColor,
+  updateFamily,
+  updateStyle,
+} from "./brand-system";
+import { Canvas, contrastGrade, STRATEGY_LABELS, type CanvasActions } from "./canvas";
+import { FontLoader } from "./font-loader";
+import { contrastRatio } from "@stela/brand-schema";
 import {
   addBlock,
   addSection,
@@ -34,6 +55,8 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
   const [sectionId, setSectionId] = useState<string | null>(firstTop);
   const [blockId, setBlockId] = useState<string | null>(null);
   const [focusSection, setFocusSection] = useState<string | null>(null);
+  const [tab, setTab] = useState<"guide" | "brand">("guide");
+  const [notice, setNotice] = useState<string | null>(null);
 
   const selectedSection = sectionId ? draft.sections[sectionId] : undefined;
   const rootId = selectedSection ? topLevelAncestor(draft, selectedSection.id) : childSections(draft, null)[0]?.id ?? null;
@@ -98,8 +121,49 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
     },
   };
 
+  const brandActions: BrandActions = {
+    addColor: (input) => run((d) => addColor(d, input)).error,
+    updateColor: (id, patch) => run((d) => updateColor(d, id, patch)).error,
+    moveColor: (id, dir) => run((d) => moveColor(d, id, dir)),
+    deleteColor: (id) => {
+      const c = draft.colors[id];
+      if (!c) return;
+      const used = colorUsage(draft, id);
+      const msg = used
+        ? `Delete ${c.name}? It is used in ${used} block${used === 1 ? "" : "s"} and will be removed from them.`
+        : `Delete ${c.name}?`;
+      if (window.confirm(msg)) run((d) => deleteColor(d, id));
+    },
+    addFamily: (input) => run((d) => addFamily(d, input)).error,
+    updateFamily: (id, patch) => run((d) => updateFamily(d, id, patch)),
+    deleteFamily: (id) => {
+      const r = run((d) => deleteFamily(d, id));
+      setNotice(r.error ?? null);
+    },
+    addStyle: () => {
+      const family = Object.values(draft.families).find((f) => f.role === "secondary") ?? Object.values(draft.families)[0];
+      if (!family) return;
+      run((d) => addStyle(d, { name: "New style", family_id: family.id, weight: 400, size: 16, line_height: 1.5, tracking: 0, text_transform: "none" }));
+    },
+    updateStyle: (id, patch) => run((d) => updateStyle(d, id, patch)),
+    deleteStyle: (id) => {
+      const st = draft.styles[id];
+      if (st && window.confirm(`Delete the ${st.name} style?`)) run((d) => deleteStyle(d, id));
+    },
+    addStandardScale: () => {
+      const families = Object.values(draft.families);
+      const heading = families.find((f) => f.role === "primary") ?? families[0];
+      const body = families.find((f) => f.role === "secondary") ?? heading;
+      if (heading && body) {
+        const r = run((d) => addStandardScale(d, heading.id, body.id));
+        setNotice(r.error ?? null);
+      }
+    },
+  };
+
   return (
     <div className="flex min-h-[calc(100vh-61px)] flex-col">
+      <FontLoader draft={draft} />
       <div className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-5 py-2.5">
         <Link href="/dashboard" className="text-sm text-muted no-underline hover:text-ink">
           ← Brands
@@ -115,8 +179,35 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
       {status.state === "conflict" || status.state === "error" ? <SaveProblem status={status} /> : null}
 
       <div className="flex flex-1 flex-wrap">
-        <aside className="max-h-[calc(100vh-110px)] w-full overflow-auto border-r border-line bg-surface p-3 md:sticky md:top-0 md:w-[280px]">
-          <SectionTree draft={draft} selectedId={sectionId} actions={tree} />
+        <aside className="max-h-[calc(100vh-110px)] w-full overflow-auto border-r border-line bg-surface p-3 md:sticky md:top-0 md:w-[300px]">
+          <div role="tablist" aria-label="Editor panels" className="mb-3 flex gap-1 rounded-[var(--radius-control)] bg-paper p-1">
+            {(
+              [
+                ["guide", "Guide"],
+                ["brand", "Brand system"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+                className={`flex-1 rounded-md px-2 py-1.5 text-[13px] ${tab === key ? "bg-surface font-semibold shadow-sm" : "text-muted hover:text-ink"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {notice ? (
+            <div role="alert" className="mb-3 flex items-start gap-2 rounded-md bg-[#fbf0d9] p-2.5 text-xs text-[#6b4700]">
+              <span className="flex-1">{notice}</span>
+              <button type="button" aria-label="Dismiss" onClick={() => setNotice(null)}>
+                ✕
+              </button>
+            </div>
+          ) : null}
+          {tab === "guide" ? <SectionTree draft={draft} selectedId={sectionId} actions={tree} /> : <BrandPanel draft={draft} actions={brandActions} />}
         </aside>
 
         <main className="min-w-0 flex-[999_1_480px] bg-paper p-4 md:p-8">
@@ -129,7 +220,7 @@ export function Editor({ brand, initial, rev }: { brand: EditorBrand; initial: D
 
         <aside className="w-full border-l border-line bg-surface p-5 lg:w-[300px]" aria-label="Settings">
           {selectedBlock ? (
-            <BlockSettings block={selectedBlock} onLayout={(layout) => run((d) => updateBlockLayout(d, selectedBlock.id, layout))} onProps={(props) => run((d) => updateBlockProps(d, selectedBlock.id, props))} />
+            <BlockSettings draft={draft} block={selectedBlock} openBrand={() => setTab("brand")} onLayout={(layout) => run((d) => updateBlockLayout(d, selectedBlock.id, layout))} onProps={(props) => run((d) => updateBlockProps(d, selectedBlock.id, props))} />
           ) : selectedSection ? (
             <SectionSettings section={selectedSection} tree={tree} />
           ) : (
@@ -215,10 +306,16 @@ const BLOCK_NAMES: Partial<Record<BlockType, string>> = {
   heading: "Heading",
   strategy_field: "Strategy field",
   divider: "Divider",
+  palette: "Colour palette",
+  color_combinations: "Colour combinations",
+  type_specimen: "Type specimen",
+  type_family: "Typeface",
 };
 
-function BlockSettings({ block, onLayout, onProps }: {
+function BlockSettings({ draft, block, openBrand, onLayout, onProps }: {
+  draft: Draft;
   block: BlockRow;
+  openBrand: () => void;
   onLayout: (layout: Partial<BlockRow["layout"]>) => void;
   onProps: (props: Record<string, unknown>) => void;
 }) {
@@ -251,6 +348,10 @@ function BlockSettings({ block, onLayout, onProps }: {
           onChange={(v) => onProps({ ...block.props, level: Number(v) })}
         />
       ) : null}
+      {block.type === "palette" ? <PaletteSettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
+      {block.type === "color_combinations" ? <CombinationSettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
+      {block.type === "type_specimen" ? <SpecimenSettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
+      {block.type === "type_family" ? <FamilySettings draft={draft} block={block} onProps={onProps} openBrand={openBrand} /> : null}
       {block.type === "strategy_field" ? (
         <>
           <Segmented
@@ -308,5 +409,241 @@ function EmptyGuide({ onAdd }: { onAdd: () => void }) {
         Add a section
       </button>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Brand system block settings
+// ---------------------------------------------------------------------------
+
+type SettingsProps = { draft: Draft; block: BlockRow; onProps: (props: Record<string, unknown>) => void; openBrand: () => void };
+
+function NoTokens({ what, openBrand }: { what: string; openBrand: () => void }) {
+  return (
+    <p className="rounded-md bg-paper p-3 text-[13px] text-muted">
+      No {what} yet.{" "}
+      <button type="button" onClick={openBrand} className="text-accent hover:underline">
+        Open Brand system
+      </button>
+    </p>
+  );
+}
+
+function PaletteSettings({ draft, block, onProps, openBrand }: SettingsProps) {
+  const ids = (block.props.tokenIds as string[]) ?? [];
+  const show = block.props.show as { hex: boolean; rgb: boolean; cmyk: boolean; pantone: boolean };
+  if (!Object.keys(draft.colors).length) return <NoTokens what="colours" openBrand={openBrand} />;
+  const toggle = (id: string) => {
+    const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+    // Keep the brand's colour order regardless of click order.
+    const order = allColors(draft).map((c) => c.id);
+    onProps({ ...block.props, tokenIds: next.sort((a, b) => order.indexOf(a) - order.indexOf(b)) });
+  };
+  return (
+    <>
+      <fieldset className="flex flex-col gap-1">
+        <legend className="mb-1.5 font-medium">Colours shown</legend>
+        {COLOR_GROUPS.map((g) => {
+          const colors = colorsInGroup(draft, g.key);
+          if (!colors.length) return null;
+          return (
+            <div key={g.key} className="flex flex-col gap-1">
+              <div className="flex items-center text-xs text-subtle">
+                <span className="flex-1">{g.label}</span>
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => {
+                    const order = allColors(draft).map((c) => c.id);
+                    const merged = [...new Set([...ids, ...colors.map((c) => c.id)])];
+                    onProps({ ...block.props, tokenIds: merged.sort((a, b) => order.indexOf(a) - order.indexOf(b)) });
+                  }}
+                >
+                  Add all
+                </button>
+              </div>
+              {colors.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-paper">
+                  <input type="checkbox" checked={ids.includes(c.id)} onChange={() => toggle(c.id)} />
+                  <span className="h-4 w-4 rounded border border-black/10" style={{ background: c.hex }} />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          );
+        })}
+      </fieldset>
+      <Segmented
+        label="Layout"
+        value={String(block.props.layout ?? "columns")}
+        options={[
+          ["columns", "Columns"],
+          ["grid", "Grid"],
+          ["stacked", "Stacked"],
+        ]}
+        onChange={(v) => onProps({ ...block.props, layout: v })}
+      />
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 font-medium">Values shown</legend>
+        {(["hex", "rgb", "cmyk", "pantone"] as const).map((k) => (
+          <label key={k} className="flex items-center gap-2">
+            <input type="checkbox" checked={Boolean(show?.[k])} onChange={(e) => onProps({ ...block.props, show: { ...show, [k]: e.target.checked } })} />
+            {k === "pantone" ? "Pantone" : k.toUpperCase()}
+          </label>
+        ))}
+      </fieldset>
+    </>
+  );
+}
+
+function CombinationSettings({ draft, block, onProps, openBrand }: SettingsProps) {
+  const pairs = (block.props.pairs as Array<{ foregroundId: string; backgroundId: string }>) ?? [];
+  const colors = allColors(draft);
+  const [fg, setFg] = useState(colors[1]?.id ?? colors[0]?.id ?? "");
+  const [bg, setBg] = useState(colors[0]?.id ?? "");
+  if (colors.length < 2) return <NoTokens what="colour pairs (add at least two colours)" openBrand={openBrand} />;
+  const select = "h-9 w-full rounded-[var(--radius-control)] border border-line-strong bg-surface px-2 text-sm";
+  const preview = draft.colors[fg] && draft.colors[bg] ? contrastRatio(draft.colors[fg]!.hex, draft.colors[bg]!.hex) : null;
+  return (
+    <>
+      <div className="flex flex-col gap-1.5">
+        <span className="font-medium">Pairings</span>
+        {pairs.map((p, i) => {
+          const f = draft.colors[p.foregroundId];
+          const b = draft.colors[p.backgroundId];
+          if (!f || !b) return null;
+          const ratio = contrastRatio(f.hex, b.hex);
+          return (
+            <div key={`${p.foregroundId}-${p.backgroundId}`} className="flex items-center gap-2 rounded border border-line p-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded text-xs font-semibold" style={{ background: b.hex, color: f.hex }}>
+                Aa
+              </span>
+              <span className="min-w-0 flex-1 text-xs">
+                {f.name} on {b.name}
+                <br />
+                <span className={contrastGrade(ratio).good ? "text-muted" : "text-danger"}>
+                  {ratio.toFixed(1)}:1 · {contrastGrade(ratio).label}
+                </span>
+              </span>
+              <button type="button" className="text-xs text-danger" onClick={() => onProps({ ...block.props, pairs: pairs.filter((_, j) => j !== i) })}>
+                Remove
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-col gap-2 rounded-md bg-paper p-3">
+        <label className="flex flex-col gap-1 text-xs font-medium">
+          Text colour
+          <select value={fg} onChange={(e) => setFg(e.target.value)} className={select}>
+            {colors.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium">
+          Background colour
+          <select value={bg} onChange={(e) => setBg(e.target.value)} className={select}>
+            {colors.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {preview !== null ? (
+          <span className="text-xs text-muted">
+            Contrast {preview.toFixed(1)}:1 · {contrastGrade(preview).label}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          disabled={!fg || !bg || fg === bg || pairs.some((p) => p.foregroundId === fg && p.backgroundId === bg)}
+          onClick={() => onProps({ ...block.props, pairs: [...pairs, { foregroundId: fg, backgroundId: bg }] })}
+          className="rounded-md bg-ink px-3 py-1.5 text-[13px] text-white disabled:opacity-40"
+        >
+          Add pairing
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SpecimenSettings({ draft, block, onProps, openBrand }: SettingsProps) {
+  const ids = (block.props.styleIds as string[]) ?? [];
+  const styles = orderedStyles(draft);
+  if (!styles.length) return <NoTokens what="type styles" openBrand={openBrand} />;
+  const order = styles.map((s) => s.id);
+  return (
+    <>
+      <fieldset className="flex flex-col gap-1">
+        <legend className="mb-1.5 font-medium">Styles shown</legend>
+        <button type="button" className="mb-1 self-start text-xs text-accent hover:underline" onClick={() => onProps({ ...block.props, styleIds: order })}>
+          Show all styles
+        </button>
+        {styles.map((s) => (
+          <label key={s.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-paper">
+            <input
+              type="checkbox"
+              checked={ids.includes(s.id)}
+              onChange={() => {
+                const next = ids.includes(s.id) ? ids.filter((x) => x !== s.id) : [...ids, s.id];
+                onProps({ ...block.props, styleIds: next.sort((a, b) => order.indexOf(a) - order.indexOf(b)) });
+              }}
+            />
+            {s.name}
+          </label>
+        ))}
+      </fieldset>
+      <label className="flex flex-col gap-1.5 font-medium">
+        Sample text
+        <textarea
+          key={block.id}
+          defaultValue={String(block.props.sampleText ?? "")}
+          maxLength={300}
+          rows={3}
+          onBlur={(e) => onProps({ ...block.props, sampleText: e.currentTarget.value })}
+          className="rounded-[var(--radius-control)] border border-line-strong p-2 font-normal outline-none focus:border-accent"
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={block.props.showDetails !== false} onChange={(e) => onProps({ ...block.props, showDetails: e.target.checked })} />
+        Show size, weight and spacing
+      </label>
+    </>
+  );
+}
+
+function FamilySettings({ draft, block, onProps, openBrand }: SettingsProps) {
+  const families = Object.values(draft.families);
+  if (!families.length) return <NoTokens what="typefaces" openBrand={openBrand} />;
+  return (
+    <>
+      <label className="flex flex-col gap-1.5 font-medium">
+        Typeface
+        <select
+          value={String(block.props.familyId ?? "")}
+          onChange={(e) => onProps({ ...block.props, familyId: e.target.value || null })}
+          className="h-10 rounded-[var(--radius-control)] border border-line-strong bg-surface px-2 font-normal"
+        >
+          <option value="">Choose a typeface</option>
+          {families.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={block.props.showWeights !== false} onChange={(e) => onProps({ ...block.props, showWeights: e.target.checked })} />
+        Show weights
+      </label>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={block.props.showCharacters !== false} onChange={(e) => onProps({ ...block.props, showCharacters: e.target.checked })} />
+        Show character set
+      </label>
+    </>
   );
 }

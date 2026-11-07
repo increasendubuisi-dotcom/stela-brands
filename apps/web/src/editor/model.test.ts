@@ -24,7 +24,7 @@ const ids = () => {
   return () => `00000000-0000-4000-8000-${(++n).toString().padStart(12, "0")}`;
 };
 
-const empty = (): Draft => ({ sections: {}, blocks: {}, strategy: {} });
+const empty = (): Draft => ({ sections: {}, blocks: {}, strategy: {}, colors: {}, families: {}, styles: {} });
 
 function build() {
   const newId = ids();

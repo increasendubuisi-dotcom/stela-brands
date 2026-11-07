@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { STRATEGY_FIELD_KEYS, type BlockType, type StrategyFieldKey } from "@stela/brand-schema";
+import { colorValues, contrastRatio, STRATEGY_FIELD_KEYS, type BlockType, type StrategyFieldKey } from "@stela/brand-schema";
+import { familyCss, weightsByFamily } from "./brand-system";
 import { childSections, docToText, sectionBlocks, strategyText, textToDoc, type BlockRow, type Draft, type SectionRow } from "./model";
 import { PlusIcon } from "./section-tree";
 
@@ -22,10 +23,6 @@ export const STRATEGY_LABELS: Record<StrategyFieldKey, string> = {
 };
 
 const LATER_STAGE: Partial<Record<BlockType, string>> = {
-  palette: "Colour palette",
-  color_combinations: "Colour combinations",
-  type_specimen: "Type specimen",
-  type_family: "Typeface",
   image: "Image",
   video: "Video",
   gallery: "Image gallery",
@@ -214,6 +211,14 @@ function BlockView({ draft, block, actions }: { draft: Draft; block: BlockRow; a
     }
     case "divider":
       return <hr className="my-3 border-line-strong" />;
+    case "palette":
+      return <PaletteView draft={draft} block={block} />;
+    case "color_combinations":
+      return <CombinationsView draft={draft} block={block} />;
+    case "type_specimen":
+      return <SpecimenView draft={draft} block={block} />;
+    case "type_family":
+      return <FamilyView draft={draft} block={block} />;
     default:
       return (
         <div className="rounded-md border border-dashed border-line-strong bg-paper px-4 py-5 text-sm text-muted">
@@ -307,7 +312,11 @@ function AddBlockMenu({ sectionId, afterId, actions, compact }: {
               <MenuChoice title="Heading" hint="A title inside the section" onClick={() => add("heading")} />
               <MenuChoice title="Strategy field" hint="Mission, values, tone… shared across the guide" onClick={() => setAskStrategy(true)} />
               <MenuChoice title="Divider" hint="A horizontal rule" onClick={() => add("divider")} />
-              <p className="px-2.5 py-2 text-xs text-subtle">Colour, type, image and file blocks arrive in the next stages.</p>
+              <MenuChoice title="Colour palette" hint="Swatches with HEX, RGB and CMYK" onClick={() => add("palette")} />
+              <MenuChoice title="Colour combinations" hint="Approved pairings with contrast checks" onClick={() => add("color_combinations")} />
+              <MenuChoice title="Type specimen" hint="Your type hierarchy, rendered" onClick={() => add("type_specimen")} />
+              <MenuChoice title="Typeface" hint="One typeface with its weights and characters" onClick={() => add("type_family")} />
+              <p className="px-2.5 py-2 text-xs text-subtle">Image, video and file blocks arrive with asset uploads.</p>
             </>
           )}
         </div>
@@ -330,5 +339,205 @@ function HiddenNote() {
     <p className="mb-4 rounded-md bg-paper px-3 py-2 text-sm text-muted">
       This section is hidden. It stays in your draft but won't appear in the published guide.
     </p>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Brand system blocks
+// ---------------------------------------------------------------------------
+
+function EmptyBlockHint({ children }: { children: ReactNode }) {
+  return <div className="rounded-md border border-dashed border-line-strong px-4 py-5 text-sm text-muted">{children}</div>;
+}
+
+function CopyValue({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        } catch {
+          // Clipboard blocked by the browser; the value stays visible to copy by hand.
+        }
+      }}
+      className="flex w-full justify-between gap-2 rounded px-0.5 text-left hover:bg-paper"
+      title={`Copy ${label}`}
+    >
+      <span>{value}</span>
+      <span className="text-subtle">{copied ? "Copied" : ""}</span>
+    </button>
+  );
+}
+
+function PaletteView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const ids = (block.props.tokenIds as string[] | undefined) ?? [];
+  const show = (block.props.show as { hex: boolean; rgb: boolean; cmyk: boolean; pantone: boolean }) ?? { hex: true, rgb: true, cmyk: true, pantone: false };
+  const layout = (block.props.layout as string) ?? "columns";
+  const colors = ids.map((id) => draft.colors[id]).filter((c): c is NonNullable<typeof c> => Boolean(c));
+  if (!colors.length) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Colour palette.</strong>{" "}
+        {Object.keys(draft.colors).length ? "Choose which colours to show in the settings panel." : "Add colours in Brand system first, then choose them here."}
+      </EmptyBlockHint>
+    );
+  }
+  const columns = layout === "stacked" ? 1 : layout === "grid" ? 3 : Math.min(colors.length, 5);
+  return (
+    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+      {colors.map((c) => {
+        const v = colorValues(c.hex, c.cmyk_override);
+        return (
+          <div key={c.id} className={layout === "stacked" ? "flex items-center gap-4" : "flex flex-col gap-2"}>
+            <div
+              className={`${layout === "stacked" ? "h-16 w-24 shrink-0" : "aspect-[3/4] w-full"} rounded border border-black/5`}
+              style={{ background: c.hex }}
+            />
+            <div className="flex flex-col gap-0.5 text-xs leading-relaxed text-muted">
+              <strong className="text-sm text-ink">{c.name}</strong>
+              {show.hex ? <CopyValue label="HEX" value={v.hex} /> : null}
+              {show.rgb ? <CopyValue label="RGB" value={`RGB ${v.rgb.r} ${v.rgb.g} ${v.rgb.b}`} /> : null}
+              {show.cmyk ? <CopyValue label="CMYK" value={`CMYK ${v.cmyk.c} ${v.cmyk.m} ${v.cmyk.y} ${v.cmyk.k}`} /> : null}
+              {show.pantone && c.pantone ? <CopyValue label="Pantone" value={`PMS ${c.pantone}`} /> : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function contrastGrade(ratio: number): { label: string; good: boolean } {
+  if (ratio >= 7) return { label: "AAA", good: true };
+  if (ratio >= 4.5) return { label: "AA", good: true };
+  if (ratio >= 3) return { label: "AA large text only", good: true };
+  return { label: "Fails contrast", good: false };
+}
+
+function CombinationsView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const pairs = ((block.props.pairs as Array<{ foregroundId: string; backgroundId: string }>) ?? [])
+    .map((p) => ({ fg: draft.colors[p.foregroundId], bg: draft.colors[p.backgroundId] }))
+    .filter((p): p is { fg: NonNullable<typeof p.fg>; bg: NonNullable<typeof p.bg> } => Boolean(p.fg && p.bg));
+  if (!pairs.length) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Colour combinations.</strong> Add pairings in the settings panel; each one shows its contrast rating.
+      </EmptyBlockHint>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {pairs.map(({ fg, bg }) => {
+        const ratio = contrastRatio(fg.hex, bg.hex);
+        const grade = contrastGrade(ratio);
+        return (
+          <div key={`${fg.id}-${bg.id}`} className="flex flex-col gap-6 rounded border border-black/5 p-5" style={{ background: bg.hex, color: fg.hex }}>
+            <span className="font-[family-name:var(--font-display)] text-3xl">Aa</span>
+            <span className="text-xs">
+              {fg.name} on {bg.name}
+              <br />
+              {ratio.toFixed(1)}:1 · {grade.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SpecimenView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const ids = (block.props.styleIds as string[] | undefined) ?? [];
+  const sample = String(block.props.sampleText ?? "");
+  const showDetails = block.props.showDetails !== false;
+  const styles = ids.map((id) => draft.styles[id]).filter((s): s is NonNullable<typeof s> => Boolean(s));
+  if (!styles.length) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Type specimen.</strong>{" "}
+        {Object.keys(draft.styles).length ? "Choose which type styles to show in the settings panel." : "Create type styles in Brand system first."}
+      </EmptyBlockHint>
+    );
+  }
+  return (
+    <div className="flex flex-col divide-y divide-line">
+      {styles.map((s) => {
+        const family = draft.families[s.family_id];
+        return (
+          <div key={s.id} className="flex flex-col gap-2 py-4 first:pt-0">
+            {showDetails ? (
+              <span className="text-xs text-muted">
+                {s.name} · {family?.name} {s.weight} · {s.size}px / {s.line_height}
+                {s.tracking ? ` · ${s.tracking}em` : ""}
+              </span>
+            ) : null}
+            <span
+              className="break-words"
+              style={{
+                fontFamily: familyCss(family),
+                fontWeight: s.weight,
+                fontSize: `min(${s.size}px, 12vw)`,
+                lineHeight: s.line_height,
+                letterSpacing: `${s.tracking}em`,
+                textTransform: s.text_transform,
+              }}
+            >
+              {sample || s.name}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FamilyView({ draft, block }: { draft: Draft; block: BlockRow }) {
+  const family = block.props.familyId ? draft.families[block.props.familyId as string] : undefined;
+  if (!family) {
+    return (
+      <EmptyBlockHint>
+        <strong className="text-ink">Typeface.</strong>{" "}
+        {Object.keys(draft.families).length ? "Choose a typeface in the settings panel." : "Add a typeface in Brand system first."}
+      </EmptyBlockHint>
+    );
+  }
+  const weights = weightsByFamily(draft).get(family.id) ?? [400];
+  const css = familyCss(family);
+  return (
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr]">
+      <span className="text-[120px] leading-none" style={{ fontFamily: css }}>
+        Aa
+      </span>
+      <div className="flex flex-col gap-3">
+        <span className="text-2xl" style={{ fontFamily: css }}>
+          {family.name}
+        </span>
+        <span className="text-xs uppercase tracking-[0.1em] text-muted">
+          {family.role === "primary" ? "Primary typeface" : family.role === "secondary" ? "Secondary typeface" : "Typeface"}
+        </span>
+        {block.props.showWeights !== false ? (
+          <div className="flex flex-wrap gap-x-5 gap-y-1">
+            {weights.map((w) => (
+              <span key={w} style={{ fontFamily: css, fontWeight: w }}>
+                {w}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {block.props.showCharacters !== false ? (
+          <p className="break-all text-lg leading-relaxed" style={{ fontFamily: css }}>
+            ABCDEFGHIJKLMNOPQRSTUVWXYZ
+            <br />
+            abcdefghijklmnopqrstuvwxyz
+            <br />
+            0123456789 &amp;?!@₦$%
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -54,6 +54,33 @@ select tests.ok(
 select tests.ok(
   not exists (select 1 from public.sections where brand_id = 'b8000000-0000-4000-8000-000000000001' and title = 'Temporary'),
   'a section added and deleted before saving never reached the database');
+select tests.ok(
+  (select string_agg(t, '|') from (
+     select jsonb_array_elements_text(b.props -> 'tokenIds') t from public.blocks b
+     where b.brand_id = 'b8000000-0000-4000-8000-000000000001' and b.type = 'palette') x)
+  = (select doc -> 'expect' ->> 'paletteTokens' from session_input),
+  'deleting a colour removed it from the palette that used it');
+select tests.ok(
+  not exists (
+    select 1 from public.blocks b, jsonb_array_elements(b.props -> 'pairs') p
+    where b.brand_id = 'b8000000-0000-4000-8000-000000000001' and b.type = 'color_combinations'),
+  'the combination using the deleted colour was removed');
+select tests.ok(
+  (select count(*) from public.color_tokens where brand_id = 'b8000000-0000-4000-8000-000000000001')
+  = (select (doc -> 'expect' ->> 'colorCount')::int from session_input),
+  'colour tokens match the editor');
+select tests.ok(
+  (select hex from public.color_tokens where brand_id = 'b8000000-0000-4000-8000-000000000001' and name = 'Pepper Red')
+  = (select doc -> 'expect' ->> 'redHex' from session_input)
+  and (select cmyk_override ->> 'm' from public.color_tokens where brand_id = 'b8000000-0000-4000-8000-000000000001' and name = 'Pepper Red') = '80',
+  'recolouring and the CMYK override persisted');
+select tests.ok(
+  (select string_agg(name, '|' order by position) from public.type_styles where brand_id = 'b8000000-0000-4000-8000-000000000001')
+  = (select doc -> 'expect' ->> 'styleNames' from session_input),
+  'type styles match the editor');
+select tests.ok(
+  (select max(jsonb_array_length(props -> 'styleIds')) from public.blocks where brand_id = 'b8000000-0000-4000-8000-000000000001' and type = 'type_specimen') = 4,
+  'deleting a style removed it from the specimen');
 reset role;
 
 \echo 'Editor session tests passed.'
